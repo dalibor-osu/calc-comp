@@ -88,16 +88,18 @@ fn int main(String[] args)
         return 1;
     }
     
-    Lexer lexer = { .source = (String)buffer, .read_position = 0, .current_char = 0 };
-    Parser parser = { .lexer = &lexer };
-    parser.advance();
+    Lexer lexer;
+    lexer.init((String)buffer);
+    Parser parser;
+    parser.init(&lexer);
+
     Expression* exp = parser.parse_expression();
+    defer free_expression(exp);
+
     print_expression(exp);
     io::printn();
 
     io::printfn("Result: %f", eval(exp));
-
-    free_expression(exp);
 
     return 0;
 }

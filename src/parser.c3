@@ -29,6 +29,11 @@ struct Parser {
     Token current;
 }
 
+fn void Parser.init(Parser* this, Lexer* lexer) {
+    this.lexer = lexer;
+    this.advance();
+}
+
 fn void Parser.advance(Parser* this) {
     this.current = this.lexer.next();
 }

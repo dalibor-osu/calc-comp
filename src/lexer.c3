@@ -27,6 +27,10 @@ struct Lexer {
     char current_char;
 }
 
+fn void Lexer.init(Lexer* this, String content) {
+    *this = { .source = content, .read_position = 0, .current_char = 0 };
+}
+
 fn bool char.is_number(char* this) {
     return *this >= '0' && *this <= '9';
 }
