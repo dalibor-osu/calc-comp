@@ -50,7 +50,7 @@ fn void eval_statement(Statement* statement, Environment* env)
             }
 
             float value = eval_expression(statement.var_dec.rhs_expression, env);
-            env.set(statement.var_dec.name.copy(mem), value);
+            env.set(statement.var_dec.name, value);
             break;
         case EXPRESSION:
             float result = eval_expression(statement.exp.expression, env);

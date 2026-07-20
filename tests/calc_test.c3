@@ -10,11 +10,30 @@ fn Expression* parse_source(String source, Lexer* lexer) {
     return parser.parse_expression();
 }
 
+// Evaluates a whole program and returns the value of the last expression
+// statement (without printing it).
 fn float eval_source(String source) {
     Lexer lexer;
-    Expression* exp = parse_source(source, &lexer);
-    defer free_expression(exp);
-    return eval(exp);
+    lexer.init(source);
+    Parser parser;
+    parser.init(&lexer);
+    Program program = parser.parse_program();
+    defer free_program(&program);
+
+    Environment env;
+    env.init(mem);
+    defer env.free();
+
+    float result = 0;
+    foreach (statement : program) {
+        switch (statement.kind) {
+            case VAR_DECLARATION:
+                eval_statement(statement, &env);
+            case EXPRESSION:
+                result = eval_expression(statement.exp.expression, &env);
+        }
+    }
+    return result;
 }
 
 fn void assert_eval(String source, float expected) {
@@ -64,15 +83,56 @@ fn void lexer_no_spaces() @test {
 }
 
 fn void lexer_skips_whitespace() @test {
-    Lexer lexer = { .source = " \t\n 7 \r\n + \t 8 " };
+    // \n is NOT whitespace anymore (it ends statements); \r still is
+    Lexer lexer = { .source = " \t 7 \r + \t 8 " };
     assert(lexer.next().type == TokenType.NUMBER);
     assert(lexer.next().type == TokenType.PLUS);
     assert(lexer.next().type == TokenType.NUMBER);
     assert(lexer.next().type == TokenType.EOF);
 }
 
+fn void lexer_newline_is_a_token() @test {
+    Lexer lexer = { .source = "1\n2" };
+    assert(lexer.next().type == TokenType.NUMBER);
+    assert(lexer.next().type == TokenType.NEW_LINE);
+    assert(lexer.next().type == TokenType.NUMBER);
+    assert(lexer.next().type == TokenType.EOF);
+}
+
+fn void lexer_var_declaration_tokens() @test {
+    Lexer lexer = { .source = "var x = 5\nx + 1" };
+    assert(lexer.next().type == TokenType.VAR);
+    Token ident = lexer.next();
+    assert(ident.type == TokenType.IDENTIFIER);
+    assert(ident.value == "x");
+    assert(lexer.next().type == TokenType.ASSIGN);
+    assert(lexer.next().type == TokenType.NUMBER);
+    assert(lexer.next().type == TokenType.NEW_LINE);
+    assert(lexer.next().type == TokenType.IDENTIFIER);
+    assert(lexer.next().type == TokenType.PLUS);
+    assert(lexer.next().type == TokenType.NUMBER);
+    assert(lexer.next().type == TokenType.EOF);
+}
+
+fn void lexer_identifier_value() @test {
+    Lexer lexer = { .source = "foo_1 + 2" };
+    Token token = lexer.next();
+    assert(token.type == TokenType.IDENTIFIER);
+    assert(token.value == "foo_1");
+}
+
+fn void lexer_keyword_prefix_is_identifier() @test {
+    // "variable" starts with "var" but must lex as one identifier
+    Lexer lexer = { .source = "variable" };
+    Token token = lexer.next();
+    assert(token.type == TokenType.IDENTIFIER);
+    assert(token.value == "variable");
+    assert(lexer.next().type == TokenType.EOF);
+}
+
 fn void lexer_illegal_token() @test {
-    Lexer lexer = { .source = "a" };
+    // "a" is an identifier since variables were added; use a real illegal char
+    Lexer lexer = { .source = "@" };
     assert(lexer.next().type == TokenType.ILLEGAL);
 }
 
@@ -106,6 +166,55 @@ fn void parser_precedence_shape() @test {
     assert(exp.bin.left.kind == ExpressionKind.NUMBER);
     assert(exp.bin.right.kind == ExpressionKind.BINARY);
     assert(exp.bin.right.bin.operator == '*');
+}
+
+fn void parser_var_declaration() @test {
+    Lexer lexer;
+    lexer.init("var x = 1 + 2");
+    Parser parser;
+    parser.init(&lexer);
+    Program program = parser.parse_program();
+    defer free_program(&program);
+
+    assert(program.len() == 1);
+    Statement* statement = program[0];
+    assert(statement.kind == StatementKind.VAR_DECLARATION);
+    assert(statement.var_dec.name == "x");
+    assert(statement.var_dec.rhs_expression.kind == ExpressionKind.BINARY);
+}
+
+fn void parser_expression_statement() @test {
+    Lexer lexer;
+    lexer.init("x * 2");
+    Parser parser;
+    parser.init(&lexer);
+    Program program = parser.parse_program();
+    defer free_program(&program);
+
+    assert(program.len() == 1);
+    Statement* statement = program[0];
+    assert(statement.kind == StatementKind.EXPRESSION);
+    Expression* exp = statement.exp.expression;
+    assert(exp.kind == ExpressionKind.BINARY);
+    assert(exp.bin.operator == '*');
+    assert(exp.bin.left.kind == ExpressionKind.IDENTIFIER);
+    assert(exp.bin.left.ident.identifier == "x");
+    assert(exp.bin.right.kind == ExpressionKind.NUMBER);
+}
+
+fn void parser_program_skips_blank_lines() @test {
+    Lexer lexer;
+    lexer.init("var x = 1\n\n\nvar y = 2\nx + y\n");
+    Parser parser;
+    parser.init(&lexer);
+    Program program = parser.parse_program();
+    defer free_program(&program);
+
+    assert(program.len() == 3);
+    assert(program[0].kind == StatementKind.VAR_DECLARATION);
+    assert(program[1].kind == StatementKind.VAR_DECLARATION);
+    assert(program[1].var_dec.name == "y");
+    assert(program[2].kind == StatementKind.EXPRESSION);
 }
 
 // --- Evaluation (end to end) ---
@@ -144,4 +253,20 @@ fn void eval_nested_parens() @test {
 
 fn void eval_single_number() @test {
     assert_eval("42", 42.0);
+}
+
+fn void eval_variable_use() @test {
+    assert_eval("var x = 2\nx * 3", 6.0);
+}
+
+fn void eval_multiple_variables() @test {
+    assert_eval("var a = 1\nvar b = 2\na + b", 3.0);
+}
+
+fn void eval_variable_from_variable() @test {
+    assert_eval("var a = 2\nvar b = a * 3\nb + 1", 7.0);
+}
+
+fn void eval_variable_in_expression() @test {
+    assert_eval("var x = 1.5\n(x + x) * 2", 6.0);
 }
