@@ -68,30 +68,22 @@ fn void free_expression(Expression* exp)
 	free(exp);
 }
 
-fn float eval_binary(BinaryExpression* binExp)
+fn void free_program(Program* program)
 {
-	switch (binExp.operator)
-	{
-		case '+': return eval(binExp.left) + eval(binExp.right);
-		case '-': return eval(binExp.left) - eval(binExp.right);
-		case '*': return eval(binExp.left) * eval(binExp.right);
-		case '/': return eval(binExp.left) / eval(binExp.right);
-		default:
-			io::printn("Invalid operator");
-			exit();
-	}
-}
+    foreach (statement : program)
+    {
+        switch(statement.kind)
+        {
+            case VAR_DECLARATION:
+                free_expression(statement.var_dec.rhs_expression);
+                break;
+            case EXPRESSION:
+                free_expression(statement.exp.expression);
+                break;
+        }
 
-fn float eval(Expression* exp)
-{
-	switch (exp.kind)
-	{
-		case NUMBER:
-			return exp.num.number;
-		case BINARY:
-			return eval_binary(&exp.bin);
-		default:
-			io::printfn("Invalid expression kind");
-			exit();
-	}
+        free(statement);
+    }
+
+    program.free();
 }

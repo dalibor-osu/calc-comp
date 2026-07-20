@@ -134,6 +134,11 @@ fn Expression* Parser.parse_factor(Parser* this)
 {
 	switch (this.current.type)
 	{
+        case IDENTIFIER:
+			Expression* node = mem::new(Expression);
+			*node = { .kind = IDENTIFIER, .ident = { this.current.value } };
+			this.advance();
+			return node;
 		case NUMBER:
 			Expression* node = mem::new(Expression);
 			*node = { .kind = NUMBER, .num = { String.to_float(this.current.value)!! } };

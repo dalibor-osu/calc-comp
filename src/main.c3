@@ -9,7 +9,7 @@ fn int main(String[] args)
 		return 1;
 	}
 
-	char[] buffer = mem::new_array(char, 2048);
+    char[] buffer = mem::new_array(char, 2048);
 	defer free(buffer);
 
 	char[]? content = read_file(args[1], buffer);
@@ -24,10 +24,9 @@ fn int main(String[] args)
 	Parser parser;
 	parser.init(&lexer);
 
-	Expression* exp = parser.parse_expression();
-	defer free_expression(exp);
-
-	io::printfn("Result: %f", eval(exp));
+    Program program = parser.parse_program();
+    defer free_program(&program);
+    eval_program(&program);
 
 	return 0;
 }
