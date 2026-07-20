@@ -42,10 +42,17 @@ struct Expression
 enum StatementKind : short
 {
 	VAR_DECLARATION,
+    VAR_ASSIGN,
 	EXPRESSION
 }
 
 struct VarDeclarationStatement
+{
+	String name;
+	Expression* rhs_expression;
+}
+
+struct VarAssignStatement
 {
 	String name;
 	Expression* rhs_expression;
@@ -62,6 +69,7 @@ struct Statement
 	union
 	{
 		VarDeclarationStatement var_dec;
+        VarAssignStatement var_assign;
 		ExpressionStatement exp;
 	}
 }

@@ -11,7 +11,7 @@ Redeclaration is an error, assignment without `var` is an error.
       `VAR`, otherwise `IDENT`
 - [x] Make `\n` significant: stop skipping it in `skip_whitespace`, emit a
       `NEWLINE` token instead (keep skipping `\r` for Windows line endings)
-- [ ] Update existing lexer tests that assume `\n` is skipped whitespace
+- [x] Update existing lexer tests that assume `\n` is skipped whitespace
       (e.g. `lexer_skips_whitespace`); add tests for the new tokens
 
 ## AST + Parser
@@ -27,7 +27,7 @@ Redeclaration is an error, assignment without `var` is an error.
 - [x] `parse_program`: loop statements until `EOF`, skipping blank lines
 - [x] Update `free_expression` for the new node kinds
   - Added free_program
-- [ ] Parser-shape tests for var declaration and identifier reference
+- [x] Parser-shape tests for var declaration and identifier reference
 
 ## Evaluation
 
@@ -40,10 +40,10 @@ Redeclaration is an error, assignment without `var` is an error.
 - [x] Identifier expression: look up in environment; error if undefined
 - [x] Bare `x = 5` (no `var`): error
 - [x] Expression statement: evaluate and print the result
-- [ ] End-to-end tests: declare + use, redeclaration error, undefined variable
+- [x] End-to-end tests: declare + use, redeclaration error, undefined variable
       error
 
 ## Later
 
-- [ ] Simple REPL (line by line — newline-terminated statements come in handy)
-- [ ] Plain assignment to existing variables (`x = 5`) as a separate feature
+- [x] Simple REPL (line by line — newline-terminated statements come in handy)
+- [x] Plain assignment to existing variables (`x = 5`) as a separate feature

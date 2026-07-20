@@ -2,10 +2,12 @@ module calc_comp;
 import std::io;
 import libc;
 
-fn void exit(int status = 1) @noreturn
-{
-	libc::exit(status);
-}
+faultdef
+    LEXER_ERROR,
+    PARSER_ERROR,
+    RUNTIME_ERROR;
+
+struct Error { String message; }
 
 fn bool char.is_number(char* this)
 {
@@ -14,7 +16,7 @@ fn bool char.is_number(char* this)
 
 fn bool char.is_letter(char* this)
 {
-	return (*this >= 'a' && *this <= 'z') || (*this >= 'a' && *this <= 'z');
+	return (*this >= 'a' && *this <= 'z') || (*this >= 'A' && *this <= 'Z');
 }
 
 fn bool char.is_valid_identifier_char(char* this)
@@ -38,26 +40,6 @@ fn char[]? read_file(String filename, char[] buffer)
 	return buffer;
 }
 
-fn void print_expression(Expression* exp)
-{
-	switch (exp.kind)
-	{
-		case NUMBER:
-			io::printf("%f", exp.num.number);
-			break;
-		case BINARY:
-			io::printf("(");
-			print_expression(exp.bin.left);
-			io::printf(" %c ", exp.bin.operator);
-			print_expression(exp.bin.right);
-			io::printf(")");
-			break;
-		default:
-			io::printfn("Invalid expression kind");
-			exit();
-	}
-}
-
 fn void free_expression(Expression* exp)
 {
 	if (exp.kind == ExpressionKind.BINARY)
@@ -68,21 +50,29 @@ fn void free_expression(Expression* exp)
 	free(exp);
 }
 
+fn void free_statement(Statement* statement)
+{
+    switch(statement.kind)
+    {
+        case VAR_DECLARATION:
+            free_expression(statement.var_dec.rhs_expression);
+            break;
+        case VAR_ASSIGN:
+            free_expression(statement.var_assign.rhs_expression);
+            break;
+        case EXPRESSION:
+            free_expression(statement.exp.expression);
+            break;
+    }
+
+    free(statement);
+}
+
 fn void free_program(Program* program)
 {
     foreach (statement : program)
     {
-        switch(statement.kind)
-        {
-            case VAR_DECLARATION:
-                free_expression(statement.var_dec.rhs_expression);
-                break;
-            case EXPRESSION:
-                free_expression(statement.exp.expression);
-                break;
-        }
-
-        free(statement);
+        free_statement(statement);
     }
 
     program.free();

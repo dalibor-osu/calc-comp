@@ -1,4 +1,5 @@
 module calc_comp;
+import std::collections::result;
 import std::io;
 
 enum TokenType : int
@@ -18,7 +19,6 @@ enum TokenType : int
 	R_PAREN,
 	NEW_LINE,
 
-	ILLEGAL,
 	EOF
 }
 
@@ -33,6 +33,7 @@ struct Lexer
 	String source;
 	uint read_position;
 	char current_char;
+    Error error;
 }
 
 fn void Lexer.init(Lexer* this, String content)
@@ -46,7 +47,7 @@ fn void Lexer.read_char(Lexer* this)
 	this.read_position++;
 }
 
-fn Token Lexer.read_number(Lexer* this)
+fn Token? Lexer.read_number(Lexer* this)
 {
 	uint start    = this.read_position - 1;
 	bool read_dot = false;
@@ -56,8 +57,8 @@ fn Token Lexer.read_number(Lexer* this)
 		{
 			if (read_dot)
 			{
-				io::printn("Invalid number");
-				exit();
+                this.error = { .message = "Invalid number format" };
+                return LEXER_ERROR~;
 			}
 
 			read_dot = true;
@@ -108,7 +109,19 @@ fn void Lexer.skip_whitespace(Lexer* this)
 	}
 }
 
-fn Token Lexer.next(Lexer* this)
+fn Token? Lexer.peek(Lexer* this)
+{
+    uint pos = this.read_position;
+    char c = this.current_char;
+
+    Token? next = this.next();
+    this.read_position = pos;
+    this.current_char = c;
+
+    return next;
+}
+
+fn Token? Lexer.next(Lexer* this)
 {
 	Token token;
 	if (this.current_char == '\0' && this.read_position == 0)
@@ -159,9 +172,8 @@ fn Token Lexer.next(Lexer* this)
 				return this.read_identifier();
 			}
 
-			token = { .type = TokenType.ILLEGAL, .value = { this.current_char } };
-			break;
-
+            this.error = { .message = "Invalid token" };
+            return LEXER_ERROR~;
 	}
 
 	this.read_char();
