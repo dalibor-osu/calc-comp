@@ -3,15 +3,20 @@ import std::io;
 
 enum TokenType : int
 {
+	IDENTIFIER,
 	NUMBER,
+
+	VAR,
 
 	PLUS,
 	MINUS,
 	STAR,
 	SLASH,
+	ASSIGN,
 
 	L_PAREN,
 	R_PAREN,
+	NEW_LINE,
 
 	ILLEGAL,
 	EOF
@@ -63,6 +68,28 @@ fn Token Lexer.read_number(Lexer* this)
 	return { .type = TokenType.NUMBER, .value = this.source[start..this.read_position - 2] };
 }
 
+fn Token lookup_keyword(String* value)
+{
+	switch(*value)
+	{
+		case "var":
+			return { .type = TokenType.VAR, .value = "var" };
+		default:
+			return { .type = TokenType.IDENTIFIER, .value = *value };
+	}
+}
+
+fn Token Lexer.read_identifier(Lexer* this) {
+	uint start    = this.read_position - 1;
+	while (this.current_char.is_valid_identifier_char())
+	{
+		this.read_char();
+	}
+
+	String value = this.source[start..this.read_position - 2];
+	return lookup_keyword(&value);
+}
+
 fn void Lexer.skip_whitespace(Lexer* this)
 {
 	bool breakLoop = false;
@@ -72,7 +99,6 @@ fn void Lexer.skip_whitespace(Lexer* this)
 		{
 			case ' ':
 			case '\t':
-			case '\n':
 			case '\r':
 				this.read_char();
 				continue;
@@ -109,21 +135,33 @@ fn Token Lexer.next(Lexer* this)
 		case '*':
 			token = { .type = TokenType.STAR, .value = "*" };
 			break;
+		case '=':
+			token = { .type = TokenType.ASSIGN, .value = "=" };
+			break;
 		case '/':
 			token = { .type = TokenType.SLASH, .value = "/" };
+			break;
+		case '\n':
+			token = { .type = TokenType.NEW_LINE, .value = "\n" };
 			break;
 		case '\0':
 			token = { .type = TokenType.EOF, .value = "\0" };
 			break;
 
 		default:
-			if (!this.current_char.is_number())
+			if (this.current_char.is_number())
 			{
-				token = { .type = TokenType.ILLEGAL, .value = { this.current_char } };
-				break;
+				return this.read_number();
 			}
 
-			return this.read_number();
+			if (this.current_char.is_letter())
+			{
+				return this.read_identifier();
+			}
+
+			token = { .type = TokenType.ILLEGAL, .value = { this.current_char } };
+			break;
+
 	}
 
 	this.read_char();

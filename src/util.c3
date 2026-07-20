@@ -12,6 +12,16 @@ fn bool char.is_number(char* this)
 	return *this >= '0' && *this <= '9';
 }
 
+fn bool char.is_letter(char* this)
+{
+	return (*this >= 'a' && *this <= 'z') || (*this >= 'a' && *this <= 'z');
+}
+
+fn bool char.is_valid_identifier_char(char* this)
+{
+	return (*this).is_letter() || (*this).is_number() || *this == '_';
+}
+
 // https://c3-lang.org/language-common/optionals-advanced/#file-reading-example
 <*
  Function modifies 'buffer'
