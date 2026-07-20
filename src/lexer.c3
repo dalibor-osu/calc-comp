@@ -31,10 +31,6 @@ fn void Lexer.init(Lexer* this, String content) {
     *this = { .source = content, .read_position = 0, .current_char = 0 };
 }
 
-fn bool char.is_number(char* this) {
-    return *this >= '0' && *this <= '9';
-}
-
 fn void Lexer.read_char(Lexer* this) {
     this.current_char = this.read_position >= this.source.len ? '\0' : this.source[this.read_position];
     this.read_position++;

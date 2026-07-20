@@ -43,12 +43,12 @@ fn Expression* Parser.parse_expression(Parser* this) {
 
     while (this.current.type == PLUS || this.current.type == MINUS) {
         char op = this.current.value[0];
-        this.advance();                          // consume the operator
+        this.advance();
         Expression* right = this.parse_term();
 
         Expression* node = mem::new(Expression);
         *node = { .kind = BINARY, .bin = { .left = left, .right = right, .operator = op } };
-        left = node;                             // result becomes left operand of the next op
+        left = node;
     }
     return left;
 }
