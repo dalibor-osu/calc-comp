@@ -8,6 +8,8 @@ enum TokenType : int
 	NUMBER,
 
 	VAR,
+    FN,
+    RETURN,
 
 	PLUS,
 	MINUS,
@@ -17,7 +19,10 @@ enum TokenType : int
 
 	L_PAREN,
 	R_PAREN,
+    L_BRACE,
+    R_BRACE,
 	NEW_LINE,
+    COMMA,
 
 	EOF
 }
@@ -75,6 +80,10 @@ fn Token lookup_keyword(String* value)
 	{
 		case "var":
 			return { .type = TokenType.VAR, .value = "var" };
+		case "fn":
+			return { .type = TokenType.FN, .value = "fn" };
+		case "return":
+			return { .type = TokenType.RETURN, .value = "return" };
 		default:
 			return { .type = TokenType.IDENTIFIER, .value = *value };
 	}
@@ -139,6 +148,12 @@ fn Token? Lexer.next(Lexer* this)
 		case ')':
 			token = { .type = TokenType.R_PAREN, .value = ")" };
 			break;
+		case '{':
+			token = { .type = TokenType.L_BRACE, .value = "{" };
+			break;
+		case '}':
+			token = { .type = TokenType.R_BRACE, .value = "}" };
+			break;
 		case '+':
 			token = { .type = TokenType.PLUS, .value = "+" };
 			break;
@@ -153,6 +168,9 @@ fn Token? Lexer.next(Lexer* this)
 			break;
 		case '/':
 			token = { .type = TokenType.SLASH, .value = "/" };
+			break;
+		case ',':
+			token = { .type = TokenType.COMMA, .value = "," };
 			break;
 		case '\n':
 			token = { .type = TokenType.NEW_LINE, .value = "\n" };

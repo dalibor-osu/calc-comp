@@ -55,16 +55,16 @@ curly braces. Newline still ends a statement.
 
 ## Lexer
 
-- [ ] New tokens: `FN`, `RETURN`, `L_BRACE` (`{`), `R_BRACE` (`}`), `COMMA`
-- [ ] Extend keyword lookup: `"fn"` → `FN`, `"return"` → `RETURN`
+- [x] New tokens: `FN`, `RETURN`, `L_BRACE` (`{`), `R_BRACE` (`}`), `COMMA`
+- [x] Extend keyword lookup: `"fn"` → `FN`, `"return"` → `RETURN`
 - [ ] Tests: token stream of a full `fn` declaration
 
 ## AST + Parser
 
-- [ ] New statement kinds (same tagged-union pattern):
+- [x] New statement kinds (same tagged-union pattern):
       - function declaration: name + parameter names + body (statement list)
       - return statement: expression
-- [ ] New expression kind: call — callee name + argument expression list
+- [x] New expression kind: call — callee name + argument expression list
 - [ ] `parse_statement` (top level): add the `FN` arm (name, `(` params `)`,
       `{` body `}`). Does NOT accept `return`.
 - [ ] `parse_block` (function body): statements until `R_BRACE`, skipping

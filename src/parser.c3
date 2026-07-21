@@ -40,9 +40,46 @@ fn void? Parser.expect(Parser* this, TokenType type, String message = "")
     return PARSER_ERROR~;
 }
 
+
+fn void? Parser.expect_next(Parser* this, TokenType type, String message = "")
+{
+    Token? next = this.lexer.peek();
+    if (catch excuse = next)
+    {
+        this.error = this.lexer.error;
+        return excuse~;
+    }
+
+	if (next.type == type)
+	{
+		return;
+	}
+
+    this.error = { .message = message == "" ? "Invalid token type" : message };
+    return PARSER_ERROR~;
+}
+
 fn void? Parser.expect_any(Parser* this, TokenType[] types, String message = "")
 {
 	if (array::contains(types, this.current.type))
+	{
+		return;
+	}
+
+    this.error = { .message = message == "" ? "Invalid token type" : message };
+    return PARSER_ERROR~;
+}
+
+fn void? Parser.expect_next_any(Parser* this, TokenType[] types, String message = "")
+{
+    Token? next = this.lexer.peek();
+    if (catch excuse = next)
+    {
+        this.error = this.lexer.error;
+        return excuse~;
+    }
+
+	if (array::contains(types, next.type))
 	{
 		return;
 	}
@@ -77,49 +114,109 @@ fn Program? Parser.parse_program(Parser* this)
 	return program;
 }
 
-fn Statement*? Parser.parse_statement(Parser* this)
+fn Statement? Parser.parse_statement_var(Parser* this)
+{
+	this.advance()!;
+	this.expect(IDENTIFIER, "var must be followed by an identifier")!;
+
+	String name = this.current.value;
+	this.advance()!;
+	this.expect(ASSIGN, "variable identifier must be followd by equals sign")!;
+
+	this.advance()!;
+	Expression* rhs = this.parse_expression()!;
+    defer catch free_expression(rhs);
+	this.expect_any({ TokenType.NEW_LINE, TokenType.EOF }, "variable declaration must end with a new line or eof")!;
+
+	return { .kind = VAR_DECLARATION, .var_dec = { .name = name, .rhs_expression = rhs } };
+}
+
+fn Statement? Parser.parse_statement_identifier(Parser* this)
+{
+	String name = this.current.value;
+    Token? next = this.lexer.peek();
+    if (catch excuse = next)
+    {
+        this.error = this.lexer.error;
+        return excuse~;
+    }
+
+    if (next.type != ASSIGN)
+    {
+	    return { .kind = EXPRESSION, .exp = { .expression = this.parse_expression()! } };
+    }
+
+	this.advance()!;
+	this.advance()!;
+	Expression* rhs = this.parse_expression()!;
+    defer catch free_expression(rhs);
+	this.expect_any({ TokenType.NEW_LINE, TokenType.EOF }, "variable assignment must end with a new line or eof")!;
+
+	return { .kind = VAR_ASSIGN, .var_assign = { .name = name, .rhs_expression = rhs } };
+}
+
+fn Statement? Parser.parse_statement_fn(Parser* this)
+{
+	this.advance()!;
+	this.expect(IDENTIFIER, "missing or invalid function name")!;
+    String name = this.current.value;
+
+	this.advance()!;
+	this.expect(L_PAREN, "function name must be followed by L_PAREN '('")!;
+
+	this.advance()!;
+    this.expect_any({ TokenType.R_PAREN, TokenType.IDENTIFIER }, "missing R_PAREN ')'");
+
+    List {String} args;
+    args.init(mem);
+    defer catch args.free();
+
+    while (this.current.type != R_PAREN)
+    {
+        switch(this.current.type)
+        {
+            case IDENTIFIER:
+                this.expect_next_any({ TokenType.COMMA, TokenType.R_PAREN}, "expected comma ',' or R_PAREN ')' after parameter name")!;
+                args.push(this.current.value);
+                break;
+            case COMMA:
+                this.expect_next(IDENTIFIER, "missing parameter name after comma")!;
+                break;
+            default:
+                this.error = { .message = "Invalid token" };
+                return PARSER_ERROR~;
+        }
+        this.advance()!;
+    }
+
+    this.advance()!;
+    this.expect(L_BRACE, "start of a block expected");
+    // TODO: continue here, implement parse_block
+}
+
+fn Statement*? Parser.parse_statement(Parser* this, bool allowReturn)
 {
 	Statement* result = mem::new(Statement);
     defer catch free(result);
 	switch (this.current.type)
 	{
 		case VAR:
-			this.advance()!;
-			this.expect(IDENTIFIER, "var must be followed by an identifier")!;
-
-			String name = this.current.value;
-			this.advance()!;
-			this.expect(ASSIGN, "variable identifier must be followd by equals sign")!;
-
-			this.advance()!;
-			Expression* rhs = this.parse_expression()!;
-            defer catch free_expression(rhs);
-			this.expect_any({ TokenType.NEW_LINE, TokenType.EOF }, "variable declaration must end with a new line or eof")!;
-
-			*result = { .kind = VAR_DECLARATION, .var_dec = { .name = name, .rhs_expression = rhs } };
+            *result = this.parse_statement_var()!;
 			break;
         case IDENTIFIER:
-			String name = this.current.value;
-            Token? next = this.lexer.peek();
-            if (catch excuse = next)
+            *result = this.parse_statement_identifier()!;
+			break;
+        case FN:
+            *result = this.parse_statement_fn()!;
+			break;
+        case RETURN:
+            if (!allowReturn)
             {
-                this.error = this.lexer.error;
-                return excuse~;
+                this.error = { .message = "Unexpected return statement encountered" };
+                return PARSER_ERROR;
             }
-
-            if (next.type != ASSIGN)
-            {
-			    *result = { .kind = EXPRESSION, .exp = { .expression = this.parse_expression()! } };
-			    break;
-            }
-
-			this.advance()!;
-			this.advance()!;
-			Expression* rhs = this.parse_expression()!;
-            defer catch free_expression(rhs);
-			this.expect_any({ TokenType.NEW_LINE, TokenType.EOF }, "variable assignment must end with a new line or eof")!;
-
-			*result = { .kind = VAR_ASSIGN, .var_assign = { .name = name, .rhs_expression = rhs } };
+            this.advance()!;
+			*result = { .kind = RETURN, .ret = { .expression = this.parse_expression()! } };
 			break;
 		default:
 			*result = { .kind = EXPRESSION, .exp = { .expression = this.parse_expression()! } };

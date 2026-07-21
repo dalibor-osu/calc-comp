@@ -1,4 +1,5 @@
 module calc_comp;
+import std::collections::list;
 
 // Expressions
 
@@ -6,7 +7,8 @@ enum ExpressionKind : short
 {
 	NUMBER,
 	BINARY,
-	IDENTIFIER	
+	IDENTIFIER,
+    CALL
 }
 
 struct NumberExpression
@@ -14,16 +16,22 @@ struct NumberExpression
 	float number;
 }
 
-struct IdentifierExpression
-{
-	String identifier;
-}
-
 struct BinaryExpression
 {
 	Expression* left;
 	Expression* right;
 	char operator;
+}
+
+struct IdentifierExpression
+{
+	String identifier;
+}
+
+struct CallExpression
+{
+	String name;
+    List {Expression*} args;
 }
 
 struct Expression
@@ -34,6 +42,7 @@ struct Expression
 		NumberExpression num;
 		BinaryExpression bin;
 		IdentifierExpression ident;
+        CallExpression call;
 	}
 }
 
@@ -42,14 +51,23 @@ struct Expression
 enum StatementKind : short
 {
 	VAR_DECLARATION,
+    FN_DECLARATION,
     VAR_ASSIGN,
-	EXPRESSION
+	EXPRESSION,
+    RETURN
 }
 
 struct VarDeclarationStatement
 {
 	String name;
 	Expression* rhs_expression;
+}
+
+struct FnDeclarationStatement
+{
+	String name;
+	List {String} parameter_names;
+    List {Statement} body;
 }
 
 struct VarAssignStatement
@@ -63,13 +81,20 @@ struct ExpressionStatement
 	Expression* expression;
 }
 
+struct ReturnStatement
+{
+	Expression* expression;
+}
+
 struct Statement
 {
 	StatementKind kind;
 	union
 	{
 		VarDeclarationStatement var_dec;
+		FnDeclarationStatement fn_dec;
         VarAssignStatement var_assign;
 		ExpressionStatement exp;
+        ReturnStatement ret;
 	}
 }
