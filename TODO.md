@@ -65,9 +65,9 @@ curly braces. Newline still ends a statement.
       - function declaration: name + parameter names + body (statement list)
       - return statement: expression
 - [x] New expression kind: call — callee name + argument expression list
-- [ ] `parse_statement` (top level): add the `FN` arm (name, `(` params `)`,
+- [x] `parse_statement` (top level): add the `FN` arm (name, `(` params `)`,
       `{` body `}`). Does NOT accept `return`.
-- [ ] `parse_block` (function body): statements until `R_BRACE`, skipping
+- [x] `parse_block` (function body): statements until `R_BRACE`, skipping
       newlines. Accepts return/var/assign/expression but NOT `fn` (enforces
       no-nested-functions and body-only `return` structurally).
 - [ ] Call parsing in `parse_factor`: `IDENTIFIER` followed by `(` (same

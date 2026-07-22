@@ -29,6 +29,18 @@ fn void? Parser.advance(Parser* this)
     this.current = next;
 }
 
+fn Token? Parser.peek(Parser* this)
+{
+    Token? next = this.lexer.peek();
+    if (catch excuse = next)
+    {
+        this.error = this.lexer.error;
+        return excuse~;
+    }
+
+    return next;
+}
+
 fn void? Parser.expect(Parser* this, TokenType type, String message = "")
 {
 	if (this.current.type == type)
@@ -43,13 +55,7 @@ fn void? Parser.expect(Parser* this, TokenType type, String message = "")
 
 fn void? Parser.expect_next(Parser* this, TokenType type, String message = "")
 {
-    Token? next = this.lexer.peek();
-    if (catch excuse = next)
-    {
-        this.error = this.lexer.error;
-        return excuse~;
-    }
-
+    Token next = this.peek()!;
 	if (next.type == type)
 	{
 		return;
@@ -72,13 +78,7 @@ fn void? Parser.expect_any(Parser* this, TokenType[] types, String message = "")
 
 fn void? Parser.expect_next_any(Parser* this, TokenType[] types, String message = "")
 {
-    Token? next = this.lexer.peek();
-    if (catch excuse = next)
-    {
-        this.error = this.lexer.error;
-        return excuse~;
-    }
-
+    Token next = this.peek();
 	if (array::contains(types, next.type))
 	{
 		return;
@@ -191,7 +191,51 @@ fn Statement? Parser.parse_statement_fn(Parser* this)
 
     this.advance()!;
     this.expect(L_BRACE, "start of a block expected");
-    // TODO: continue here, implement parse_block
+    List {Statement*} block = this.parse_block(true);
+    if (!block.last()!.kind != RETURN)
+    {
+        this.error = { .message = "Missing reurn statement" };
+        return PARSER_ERROR;
+    }
+
+    return { .kind = FN_DECLARATION, .fn_dec = { .name = name, .parameter_names = args, .body = block } };
+}
+
+fn List {Statement*}? Parser.parse_block(Parser* this, bool allowReturn)
+{
+    if (this.current.type == L_BRACE)
+    {
+        this.advance()!;
+    }
+
+    List {Statement*} block;
+    block.init(mem);
+    defer catch {
+        foreach (statement : block) free_statement(statement);
+        block.free();
+    }
+
+    while (this.current.type != R_BRACE)
+    {
+        Token next = this.peek()!;
+        if (next.type == EOF)
+        {
+            this.error = { .message = "Block not ended" };
+            return PARSER_ERROR;
+        }
+
+		if (this.current.type == NEW_LINE)
+		{
+			this.advance()!;
+			continue;
+		}
+
+        Statement* statement = this.parse_statement(allowReturn)!;
+        block.push(statement);
+    }
+
+    this.advance()!;
+    return block;
 }
 
 fn Statement*? Parser.parse_statement(Parser* this, bool allowReturn)
@@ -262,6 +306,31 @@ fn Expression*? Parser.parse_term(Parser* this)
 	return left;
 }
 
+fn Expression? Parser.parse_factor_call(Parser* this)
+{
+    // TODO: Continue here: parse fn call
+    String fnName = this.current.value;
+    this.advance()!;
+    this.advance()!;
+
+    List {Expression*} parameters;
+    parameters.init(mem);
+    defer catch {
+        foreach (expression : parameters) free_expression(expression);
+        parameters.free();
+    }
+
+    if (this.current.type == R_PAREN)
+    {
+        return { .kind = CALL, .call = { .name = fnName, .args = parameters } };
+    }
+
+    while (this.current.type != R_PAREN)
+    {
+        
+    }
+}
+
 fn Expression*? Parser.parse_factor(Parser* this)
 {
 	switch (this.current.type)
@@ -269,6 +338,14 @@ fn Expression*? Parser.parse_factor(Parser* this)
         case IDENTIFIER:
 			Expression* node = mem::new(Expression);
             defer catch free(node);
+
+            if (this.peek()!.kind == L_PAREN) // call
+            {
+                *node = this.parse_factor_call();
+			    this.advance()!;
+                return node;
+            }
+
 			*node = { .kind = IDENTIFIER, .ident = { this.current.value } };
 			this.advance()!;
 			return node;
