@@ -5,7 +5,7 @@ import std::io;
 struct Environment
 {
 	Allocator allocator;
-	map::HashMap {String, float} variables;
+	map::HashMap {String, Value} variables;
 	map::HashMap {String, FnDeclarationStatement*} functions;
 	Environment* parent;
 }
@@ -53,7 +53,7 @@ fn FnDeclarationWithScope? Environment.lookup_fn(&self, String name)
 	return self.parent.lookup_fn(name)!;
 }
 
-fn float? Environment.lookup_var(&self, String name)
+fn Value? Environment.lookup_var(&self, String name)
 {
 	if (self.variables.has_key(name))
 	{
@@ -86,7 +86,7 @@ fn void? Environment.declare_fn(&self, FnDeclarationStatement* declaration)
 	self.functions.set(declaration.name, declaration);
 }
 
-fn void? Environment.declare_var(&self, String name, float value)
+fn void? Environment.declare_var(&self, String name, Value value)
 {
 	if (self.variables.has_key(name) || self.functions.has_key(name))
 	{
@@ -97,7 +97,7 @@ fn void? Environment.declare_var(&self, String name, float value)
 	self.variables.set(name, value);
 }
 
-fn void? Environment.assign_var(&self, String name, float value)
+fn void? Environment.assign_var(&self, String name, Value value)
 {
 	if (self.functions.has_key(name))
 	{
@@ -107,6 +107,13 @@ fn void? Environment.assign_var(&self, String name, float value)
 
 	if (self.variables.has_key(name))
 	{
+		Type variable_type = self.variables.get(name)!.type;
+		if ( variable_type != value.type)
+		{
+			io::printfn("invalid value provided in variable assignment. expected '%s', got '%s'", variable_type.description, value.type.description);
+			return RUNTIME_ERROR~;
+		}
+
 		self.variables.set(name, value);
 		return;
 	}

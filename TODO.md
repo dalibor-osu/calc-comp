@@ -1,173 +1,154 @@
-# TODO: Functions
+# TODO — Milestone 1: types (bool + annotations) → Milestone 2: control flow
 
-Goal:
+Order agreed: types first, control flow second — `if`/`while` conditions
+will REQUIRE a bool, so the type must exist before the syntax.
 
 ```
-fn foo(bar, baz) {
-    return bar + baz
+var x: float = 5
+fn equals(x: float, y: float): bool {
+    return x == y
+}
+
+var i = 0
+while (i < 10) {
+    i = i + 1
+}
+if (i > 0) {
+    i = 0
+} else {
+    i = 1
 }
 ```
 
-All parameters and the return value are floats (no void functions, no other
-types). `fn` keyword → function name → parameter list in parens → body in
-curly braces. Newline still ends a statement.
+## Resolved this round
 
-## Design decisions (resolved with the author)
+- **No truthiness.** Conditions must evaluate to a bool; a float in a
+  condition is a runtime error. Comparisons yield bool (superseded the
+  "1.0/0.0" idea).
+- **Comparison operators** `< > <= >= == !=` bind *looser* than `+ -`
+  (new top level in the parse chain). First two-char tokens — lexer needs
+  one char of lookahead.
+- **Operator enum** replaces `BinaryExpression.operator: char`.
+- **`else` is in scope** for the control-flow milestone.
+- **Block scoping:** if/while/else bodies run in a child env; `while`
+  creates a **fresh child env per iteration**.
+- **Missing-return rule stays conservative:** parser keeps requiring the
+  last body statement to be `return`, even when an if/else before it
+  returns on every path. Proper reachability analysis is resolver work.
+- **`break` and `continue` are in scope** for the control-flow milestone
+  (loop-only; parser enforces placement structurally, like `allow_return`).
 
-- **Lexical scoping via an environment chain.** `Environment` is a scope
-  struct holding both namespaces:
-  `{ variables map, functions map (FnDeclarationStatement*), Environment* parent }`
-  (null parent ⇒ global scope; the global scope's `functions` map is the
-  function table). Each operation walks the chain differently:
-  - **lookup** (variables and functions): own map, else parent,
-    recursively; miss at the root → undefined reference
-  - **declare** (`var`/`fn`/param): collision check + write in the **own
-    scope only** — that asymmetry is what makes shadowing work
-  - **assign** (`x = ...`): walk the chain to the scope that owns `x`,
-    write there; not found anywhere → undefined reference. A body's
-    `x = 5` where `x` is global **mutates the global**.
-- **Calls are lexically scoped.** Function lookup returns both the
-  declaration and the env it was found in — the found-env IS the
-  definition env — and the call's fresh Environment parents to it (never
-  the caller's env, which would be dynamic scoping). A scope can only find
-  functions defined on its own chain, so a callee never sees an unrelated
-  caller's locals. Future brace-blocks are just child envs too.
-- **Local functions are supported.** `fn` inside a body registers in the
-  current env's `functions` map and is callable only while that scope is
-  on the chain. Safe without closures *only because functions are not
-  values* (cannot be returned/stored), so a fn's defining env is always
-  alive at call time — if functions ever become first-class, closures must
-  be designed for real. `return` is body-only: `parse_block` accepts `fn`,
-  top-level `parse_program` rejects `return`.
-- **Namespaces: one namespace per scope, uniform shadowing.** Within a
-  single scope a function and a variable cannot share a name (declarations
-  check both maps of their own scope). Across scopes, ANY inner
-  declaration may shadow ANY outer name — including a local `var f`
-  shadowing an outer `fn f`.
-- **Missing `return` is an error.** Detection timing still open:
-  - **Static** (a small semantic pass): easy while there is no control
-    flow — "body contains no return" is structural. Preferred; would be
-    the first semantic-analysis pass.
-  - **Runtime**: body evaluation finishes without a return →
-    `RUNTIME_ERROR`. Lower effort, fine starting point.
-  - Nested-fn subtlety either way: a `return` inside a local fn does NOT
-    count for the enclosing body (`fn outer() { fn inner() { return 1 } }`
-    → `outer` is missing a return). Scan each body independently, skipping
-    nested `fn` bodies.
-- **No brace/newline formatting rules.** `{`/`}` may sit anywhere; block
-  parsing skips newlines liberally (same blank-line skipping as
-  `parse_program`).
-- **REPL handles multi-line declarations** by accumulating input until
-  braces balance (track brace depth across `treadline()` reads,
-  continuation prompt while depth > 0). NOTE: collides with the current
-  per-line `@pool()` + free-each-line lifetime — the accumulated buffer
-  and stored function ASTs must outlive a single line.
+- **Bool rules:** `true`/`false` keyword literals; bools are
+  **first-class values** (storable in vars, passable as params,
+  returnable — variables stay untyped cells, values carry the type);
+  `==`/`!=` work on two operands of the SAME type, mixed-type equality
+  is a runtime error; arithmetic and ordering comparisons
+  (`+ - * / < <= > >=`) require floats — bool operands are a runtime
+  error; REPL prints `true`/`false`.
+- **Propagation mechanism: completion record** (chosen over signal
+  faults — faults stay errors-only). Statement/block eval returns
+  `{NORMAL | RETURNED(value) | BROKE | CONTINUED}`; every construct
+  routes its children's record: blocks stop early and pass it up, loops
+  intercept BROKE (exit → NORMAL) and CONTINUED (next iteration), the
+  call boundary intercepts RETURNED and takes the value; non-NORMAL at
+  top level is a bug the parser should have prevented.
+- **Static typing via annotations** (`var x: float = 5`,
+  `fn equals(x: float, y: float): bool`). The language is statically
+  typed by declaration; `float`/`bool`/`void` become reserved keywords.
+  **Annotations are mandatory everywhere** — `var`, every param, the
+  return type; no inference. (Breaks all existing unannotated
+  programs/tests — accepted; updating them is part of Milestone 1.)
+  Enforcement is at **runtime for now** (checked at var init, assignment,
+  argument binding, and return — same runtime-check model as names) and
+  becomes a true compile-time check in the resolver, which annotations
+  make straightforward: every expression's type derives bottom-up.
+  Assignment must match the variable's declared type.
+- **`void` return type** (revised — replaces "no void functions").
+  `void` is legal ONLY as a return type, never on a var or param. A void
+  fn does not require a `return`; bare `return` (no expression) is
+  allowed for early exit; `return <expr>` in a void fn is an error, as
+  is a valueless `return` in a non-void fn. Using a void call where a
+  value is needed (var init, operand, argument, condition, assignment
+  rhs, non-void return) is a runtime error; a void call as an expression
+  statement is fine and prints nothing. The missing-return parser rule
+  now applies to non-void fns only. The completion record's RETURNED
+  may carry no value.
 
-## Lexer
+## Milestone 1: types (bool + annotations)
 
-- [x] New tokens: `FN`, `RETURN`, `L_BRACE`, `R_BRACE`, `COMMA`
-- [x] Keyword lookup: `"fn"` → `FN`, `"return"` → `RETURN`
-- [x] Tests: token stream of a full `fn` declaration
+- [x] `Type` enum (`FLOAT`, `BOOL`, `VOID`) — doubles as the `Value` kind
+      tag and the representation of annotations in the AST (`VOID` legal
+      in return position only)
+- [x] `Value` tagged union `{ type, float | bool }` replaces bare `float`
+      in eval results, env `variables` map, params/returns
+- [x] Lexer: `true`/`false`, `float`/`bool`/`void` keywords; `COLON`
+      token
+- [x] AST: bool literal expression kind; type field on
+      `VarDeclarationStatement`; fn params become `{name, type}` pairs
+      (small Param struct beats parallel lists); return type on
+      `FnDeclarationStatement`; `ReturnStatement.expression` may be null
+      (bare `return`)
+- [x] Parser: mandatory `: type` after var name and each param, `: type`
+      after the param list `)`; reject `void` on vars/params; bare
+      `return` (newline/`}` after `return`); missing-return rule only
+      for non-void fns; type-keyword error messages
+- [x] Eval type rules per the resolved bool rules above; annotation
+      checks at var init, assignment, argument binding, and return;
+      void-value-used-where-value-needed errors
+      (`RUNTIME_ERROR` + message, as usual)
+- [x] REPL/expression-statement printing: bools as `true`/`false`; void
+      call results print nothing
+- [x] Update ALL existing tests + helpers to annotated syntax (mandatory
+      annotations break them by design)
+- [x] Tests: literals, annotation syntax shapes, void fns (no return,
+      bare return, `return <expr>` error, void-in-value-position
+      errors), storing/passing/returning bools, each type-error case
+      (init, assign, arg, return, bool arithmetic; mixed equality waits
+      for `==` in milestone 2), printing
 
-## AST + Parser
+## Milestone 2: control flow (after 1)
 
-- [x] New statement kinds: function declaration (name + parameter names +
-      body statement list), return statement (expression)
-- [x] New expression kind: call (callee name + argument expression list)
-- [x] `parse_statement` (top level): `FN` arm; does not accept `return`
-- [x] `parse_block` (function body): statements until `R_BRACE`, skipping
-      newlines; accepts `return`, rejects top-level-only forms
-- [x] Call parsing in `parse_factor`: `IDENTIFIER` followed by `(` (same
-      peek trick as assignment), comma-separated args until `R_PAREN`
-- [x] Allow `fn` inside `parse_block` (local functions) — drop the
-      structural restriction; top level still rejects `return`
-- [x] `free_statement` / `free_expression` for the new node kinds — bodies
-      and arg lists are Lists, so `defer catch` error paths must free
-      partially built lists (the leak-detecting tests enforce this)
-- [x] Parser-shape tests + error-path tests (missing `)`, missing `}`,
-      missing name, top-level `return`, ...; shape test: nested `fn`
-      inside a body parses)
+- [ ] Lexer: `if`/`else`/`while`/`break`/`continue` keywords; comparison
+      tokens with one-char lookahead; token tests
+- [ ] AST: operator enum rework; `IfStatement` (condition, then-block,
+      optional else-block), `WhileStatement` (condition, body), `BREAK`,
+      `CONTINUE`
+- [ ] Parser: `parse_comparison` level above `parse_expression`; `IF`
+      (with optional `else`) and `WHILE` arms (parens required around
+      conditions, bodies via `parse_block`), legal at top level and in
+      bodies; thread `allow_return` AND a new loop flag for
+      `break`/`continue` into nested blocks (an if inside a loop inherits
+      both; a fn body resets the loop flag); free_* for new kinds;
+      shape + error-path tests (misplaced break/continue/return included)
+- [ ] Eval: condition must be bool; if/else; while with per-iteration
+      child env; the completion record (call boundary catches RETURNED,
+      loop catches BROKE/CONTINUED); e2e tests: counting loop,
+      early return from inside a loop, break/continue behavior, nested
+      loops, else branch, condition type errors
+- [ ] Recursion: now terminable — recursion tests + call-depth limit
+      (clean runtime error instead of stack overflow)
 
-## Evaluation
+## Later
 
-- [x] Rework `Environment` per the scoping decision above: struct with
-      `variables`, `functions` (store `FnDeclarationStatement*` — a
-      by-value copy would share the param/body List storage with the AST
-      and wreck ownership), `parent`. Methods encode the chain rules:
-      `get` / `declare` / `assign` for variables; function lookup returns
-      declaration + found-env. Scoping mechanics live in the environment;
-      error decisions/messages stay in eval. Freeing a child env frees
-      only its own maps, never the parent (`COPY_KEYS` applies to both
-      maps).
-- [x] Function declaration eval: register in the **current** env's
-      `functions` map; collision check = both maps of the own scope only
-      (uniform shadowing — outer names of either kind may be shadowed)
-- [x] Call expression: chain-walk lookup; undefined function → runtime
-      error; argument-count mismatch → runtime error; fresh child env with
-      params bound to evaluated args, **parent = found-env** (NOT the
-      caller's env). Free the call env when the call ends.
-- [x] `return`: mechanism to stop mid-body and carry the value out. Two
-      candidates — a `RETURN` signal fault + return-value side channel
-      (mirrors the `Error` side channel), or a `{bool returned; float value}`
-      result threaded through block/statement eval. Weigh both before
-      coding.
-- [x] Missing-return enforcement (static pass vs runtime, per the decision
-      above)
-- [x] Recursion: works via chain lookup (covers local-fn recursion too).
-      Add a call-depth limit → clean runtime error instead of stack
-      overflow.
-- [x] Lifetime/ownership: `functions` entries are **non-owning**; env
-      teardown never frees declaration ASTs. Local fns: their Statement is
-      owned by the enclosing body, which outlives the call env — nothing
-      to do. Top-level fns: owned by the program/REPL line — file mode is
-      fine (program freed after the run), but the REPL frees each line
-      after eval and must keep fn-declaration lines (buffer + AST) alive.
-- [x] End-to-end tests (in `tests/functions_test.c3`; recursion tests
-      deferred — without control flow a recursive call cannot terminate):
-      - basics: simple call, call inside expressions, multiple params,
-        recursion
-      - scoping: body reads a global; param/local shadows a global (global
-        unchanged after the call); body `x = ...` mutates a global;
-        lexical-not-dynamic (`fn helper(){return x}` called from `work()`
-        that has `var x` → undefined reference)
-      - local fns: declare + call inside a body; not visible after the
-        enclosing call ends; local recursion
-      - shadowing: local `var f` shadows outer `fn f` (and `f` is callable
-        again after the scope ends)
-      - errors: same-scope collision, arg-count mismatch, undefined
-        function, missing return (incl. nested-fn case)
+- [ ] `for` loops — desugar-to-while vs first-class node. NOTE: if
+      `continue` exists, desugaring is the tricky option (`continue` must
+      still run the step expression). Decide when close.
+- [ ] Logical operators `&&`, `||`, `!` (natural fit once bool exists)
+- [ ] Resolver / semantic pass — road to compiling; missing-return
+      reachability, name/arity checks, and full static type checking
+      (bottom-up over annotations) migrate there; once types are checked
+      statically, compiled code needs no runtime type tags (`Value`
+      becomes interpreter-only)
 
-## Later milestone: resolver (semantic pass) — the road to compiling
+## Leftovers
 
-Decision: functions ship with **runtime checks** (simplest, REPL-friendly).
-But the long-term goal is **compilation**, so a resolver pass is planned as
-its own milestone after functions. It is additive — a second walk over the
-unchanged AST between parse and eval; the evaluator only loses checks. The
-tree-walking evaluator stays as the reference implementation (and the REPL
-stays interpreted even once file mode compiles).
-
-- [ ] First check: missing `return` (per the open static-vs-runtime lean)
-- [ ] Then migrate name/arity checks: undefined reference, same-scope
-      collision, call arity — a scope stack of name/kind/arity, no values
-- [ ] Decide declaration visibility at that point: declaration-before-use
-      vs hoisting fn names (hoisting ⇒ order-independent mutual
-      recursion). Today declarations are statements that execute — the one
-      semantic that CANNOT survive compilation unchanged; expect some
-      programs to change meaning, rely on the test suite to see it.
-- [ ] Eventually: resolver annotates identifiers with (depth, slot) →
-      codegen replaces hashmap lookups with frame offsets
-- Guardrails until then: add no features whose name-resolution depends on
-  runtime values (dynamic names, eval-like constructs); keep error-behavior
-  tests growing — they are the executable spec for later semantic shifts.
-
-## Leftovers from the variables milestone
-
-- [ ] Expression statements don't enforce a NEW_LINE/EOF terminator:
-      `1 2` parses as two statements on one line in file mode, and the REPL
-      silently ignores trailing tokens after a complete expression
-- [ ] Error-reporting split: parser errors are silent + `Error` side
-      channel, but runtime errors print directly from eval.c3 (the REPL's
-      eval `catch` is deliberately empty). Consider migrating eval to the
-      `Error` struct style — would also enable line info in messages
-- [ ] File mode silently truncates input larger than the fixed 2048-byte
-      buffer in `read_file`
+- [ ] REPL: multi-line declarations unsupported (one statement per line;
+      brace accumulation deferred) — will bite harder once `while` bodies
+      want multiple lines
+- [ ] REPL: parse/eval error paths leak the line buffer
+- [ ] Expression statements don't enforce a NEW_LINE/EOF terminator
+      (`1 2` parses as two statements)
+- [ ] Error-reporting split: parser errors use the `Error` side channel;
+      runtime errors print directly from `eval.c3`
+- [ ] File mode truncates input over the fixed 2048-byte `read_file`
+      buffer

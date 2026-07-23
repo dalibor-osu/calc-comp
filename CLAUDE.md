@@ -4,8 +4,11 @@ A calculator compiler written in **C3** (https://c3-lang.org), built with
 c3c 0.8.3 (pre-release). Currently at the interpreter stage: lexer →
 recursive-descent parser → AST → tree-walking evaluator, with two front
 ends: a file runner and a REPL. Supports math expressions (`+ - * /`,
-parentheses, decimals) and variables (`var x = ...`, `x = ...`). The next
-milestone is **functions** — see `TODO.md`.
+parentheses, decimals), variables (`var x = ...`, `x = ...`), and
+functions (`fn name(params) { ... return ... }`, calls, lexical scoping
+via an environment chain, local functions). Next milestones, in order:
+**types** (a `bool` type + static type annotations), then **control
+flow** (`if`/`else`, `while`, `break`, `continue`) — see `TODO.md`.
 
 ## IMPORTANT: This is a learning project
 
@@ -46,23 +49,34 @@ Everything lives in a single module: `module calc_comp;`.
   Char-by-char with `read_position`/`current_char`. `\n` is a `NEW_LINE`
   token (statements end at newlines); `\r`, space, tab are skipped.
 - `src/ast.c3` — tagged-union AST nodes (a `kind` enum + `union` of variant
-  structs). `Expression`: `NUMBER`, `BINARY`, `IDENTIFIER`. `Statement`:
-  `VAR_DECLARATION`, `VAR_ASSIGN`, `EXPRESSION`.
+  structs). `Expression`: `NUMBER`, `BINARY`, `IDENTIFIER`, `CALL`.
+  `Statement`: `VAR_DECLARATION`, `FN_DECLARATION`, `VAR_ASSIGN`,
+  `EXPRESSION`, `RETURN`.
 - `src/parser.c3` — `alias Program = List{Statement*}`, `Parser`
-  (`init`/`advance`/`expect`/`expect_any`, one-token lookahead in
-  `current`). Precedence is encoded in the call chain: `parse_expression`
-  (+/-) → `parse_term` (*, /) → `parse_factor` (number, identifier,
-  parens). `parse_statement` disambiguates assignment (`x = ...`) from an
-  expression statement via `lexer.peek()`.
-- `src/eval.c3` — `alias Environment = HashMap{String, float}` (rework to
-  a parent-linked scope struct is pending — see `TODO.md`),
-  `eval_expression` / `eval_binary` / `eval_statement` / `eval_program`.
+  (`init`/`advance`/`peek`/`expect`/`expect_any`/..., one-token lookahead
+  in `current`). Precedence is encoded in the call chain:
+  `parse_expression` (+/-) → `parse_term` (*, /) → `parse_factor` (number,
+  identifier, call via `parse_factor_call`, parens). `parse_statement`
+  dispatches per keyword; `parse_block` parses `{ ... }` bodies (accepts
+  `fn` and — via `allow_return` — `return`; top level rejects `return`).
+- `src/env.c3` — `Environment` scope struct per the scoping decision
+  below: `{ allocator, variables map, functions map, parent }` with
+  `lookup_var`/`lookup_fn` (chain-walking; `lookup_fn` returns
+  `FnDeclarationWithScope` = declaration + definition env),
+  `declare_var`/`declare_fn` (own scope), `assign_var` (chain-walking).
+- `src/eval.c3` — `eval_expression` / `eval_binary` / `eval_statement` /
+  `eval_program`; calls run in a fresh env parented to the definition env,
+  `return` is currently detected only as a direct child of the body list
+  (must change for control flow).
 - `src/util.c3` — `faultdef LEXER_ERROR, PARSER_ERROR, RUNTIME_ERROR`,
   `struct Error { String message; }`, char classifier methods,
   `read_file`, `free_expression` / `free_statement` / `free_program`.
 - `src/main.c3` — `main` (file mode) and `run_repl` (one statement per
-  line, `@pool()` + `io::treadline()` per iteration, prints parse errors,
-  frees each line's statement, exits on `io::EOF`).
+  line, `io::readline(mem)` — persistent allocation, NOT the temp pool —
+  prints parse errors, exits on `io::EOF`). Lifetime rule: fn-declaration
+  lines **retain both the line buffer and the statement** (the env stores
+  non-owning AST pointers whose strings slice the line); all other lines
+  free both after eval. Multi-line declarations are NOT supported yet.
 - `tests/` — split by layer, all files in the same `calc_comp` module so
   helpers are shared: `test_helpers.c3` (`parse_source` — single
   expression; `eval_source` — runs a whole program, returns the last
@@ -82,7 +96,25 @@ Everything lives in a single module: `module calc_comp;`.
   milestone — see the resolver section in `TODO.md`. Until then: do not
   add features whose name resolution depends on runtime values; the REPL
   will stay interpreted even once file mode compiles.
-- **Every value is a float.** No other types, no void.
+- **Two value types: float and bool** (revised — replaces "every value is
+  a float"; agreed but not yet implemented). The language is
+  **statically typed via annotations**: `var x: float = 5`,
+  `fn equals(x: float, y: float): bool { ... }` — annotations are
+  **mandatory everywhere** (var, params, return; no inference);
+  `float`/`bool`/`void` are reserved keywords. **`void` exists as a
+  return type only** (never var/param): void fns need no `return`, bare
+  `return` is allowed for early exit, `return <expr>` in a void fn is an
+  error, and using a void call where a value is needed is a runtime
+  error (as an expression statement it's fine, prints nothing).
+  Enforcement is at **runtime for now** (var init, assignment, argument
+  binding, return — same model as name checks) and moves to the resolver
+  as a true static check later. Comparisons yield bool. **No truthiness**: `if`/`while`
+  conditions must evaluate to a bool — a float there is a runtime error.
+  Resolved rules: `true`/`false` keyword literals; bools are first-class
+  (storable, passable, returnable); `==`/`!=` require same-typed
+  operands (mixed-type equality is a runtime error); arithmetic and
+  ordering (`+ - * / < <= > >=`) require floats; assignment must match
+  the variable's declared type; the REPL prints `true`/`false`.
 - **No semicolons.** A newline ends a statement.
 - `var x = <expression>` declares; **redeclaring is a runtime error**.
 - `x = <expression>` (no `var`) assigns; **only valid if `x` already
@@ -90,7 +122,7 @@ Everything lives in a single module: `module calc_comp;`.
   statement.
 - Referencing an undefined variable is a runtime error.
 - **Division by zero is a runtime error** (not infinity).
-- Next milestone, functions (syntax agreed):
+- **Functions (implemented):**
 
   ```
   fn foo(bar, baz) {
@@ -98,7 +130,9 @@ Everything lives in a single module: `module calc_comp;`.
   }
   ```
 
-  All parameters and return values are floats; no void functions. Resolved
+  Params and returns get typed by mandatory annotations once the types
+  milestone lands (return may be `void` — see the types decision above;
+  until then everything is a float and `return` is required). Resolved
   design decisions:
   - **Lexical scoping via an environment chain** (revised — replaces the
     earlier "isolated scope" decision). Bodies DO see global variables;
@@ -127,20 +161,30 @@ Everything lives in a single module: `module calc_comp;`.
     check both maps of their own scope). Across scopes, any inner
     declaration may shadow any outer name of either kind — e.g. a local
     `var f` legally shadows an outer `fn f`.
-  - **Missing `return` is an error** — static detection preferred (would be
-    the first semantic pass; easy while there's no control flow), runtime
-    detection is the fallback. A nested fn's `return` does NOT count for
-    the enclosing body. See `TODO.md`.
-  - **No nested functions** — `fn` is top-level only, `return` is body-only.
-    Enforced structurally by separate parser entry points: `parse_program`
-    (accepts `fn`, not `return`) vs `parse_block` for bodies (accepts
-    `return`, not `fn`).
+  - **Missing `return` is an error (non-void fns)** — enforced by the
+    parser ("last body statement must be RETURN" + empty-body check);
+    once `void` lands, the rule applies only to non-void fns. A nested
+    fn's `return` does NOT count for the enclosing body. Stays
+    deliberately conservative until the resolver does reachability.
   - **No brace/newline formatting rules** — `{`/`}` may sit anywhere; block
     parsing skips newlines liberally.
-  - **REPL accumulates lines until braces balance** before parsing a
-    multi-line function. This changes the per-line lifetime: the accumulated
-    buffer and any stored function AST must outlive a single REPL line
-    (today each line's statement is freed right after eval).
+  - **REPL multi-line declarations: deferred.** The REPL parses one
+    statement per line, so fn declarations must fit on one line. The
+    planned approach (accumulate lines until braces balance) is tracked in
+    TODO leftovers.
+- Next milestones: **types** (bool + annotations), then **control flow**
+  (`while`, `if`/`else`, `break`, `continue`) — syntax agreed (parens required
+  around conditions, bodies are `{ }` child-scope blocks; `while` gets a
+  fresh child env per iteration). Resolved: comparisons (`< > <= >= ==
+  !=`) bind looser than `+ -`; the `char` operator field becomes an
+  operator enum; missing-return keeps the conservative "last statement
+  must be return" parser rule until the resolver.
+  **Return/break/continue propagate via a completion record** (chosen
+  over signal faults — faults stay errors-only): statement/block eval
+  returns `{NORMAL | RETURNED(value) | BROKE | CONTINUED}`; loops
+  intercept BROKE/CONTINUED, the call boundary intercepts RETURNED
+  (possibly valueless — void). All design decisions for both milestones
+  are settled — see `TODO.md` for the work items.
 
 ## Error handling architecture
 
@@ -171,8 +215,9 @@ Everything lives in a single module: `module calc_comp;`.
   `set` and frees them in `free()` (`COPY_KEYS` in the stdlib) — do NOT
   `.copy()` manually when storing env entries; that caused a leak once.
 - **No static methods** in c3c 0.8.3 — a method's first parameter must be
-  the receiver (`Type` or `Type*`). "Constructors" are in-place init
-  methods: `fn void Type.init(Type* this, ...)`.
+  the receiver. "Constructors" are in-place init methods using the
+  implicit receiver form: `fn void Type.init(&self, ...)` (`&self` =
+  pointer receiver, bare `self` = by value; no explicit type).
 - The compiler rejects `assert(false, ...)` — use `unreachable("msg")`.
 - `defer catch` runs only when the scope exits via a fault (twin:
   `defer try`) — this is the parser's cleanup mechanism.
@@ -189,5 +234,12 @@ Everything lives in a single module: `module calc_comp;`.
 
 - Tabs for indentation in older `src/` code, spaces in newer parts — match
   the surrounding code.
+- **Naming follows the official C3 style**
+  (https://c3-lang.org/language-fundamentals/naming/): types PascalCase;
+  struct members, functions, methods, parameters, and locals snake_case;
+  constants/enum members/faults SCREAMING_SNAKE_CASE; method receivers
+  use the implicit form — `&self` for pointer receivers (the usual case
+  here), bare `self` by value. (A brief camelCase-fields detour on
+  2026-07-23 was reverted the same day.)
 - AST nodes are heap-allocated with `mem::new` and freed recursively with
   `free_expression` / `free_statement` / `free_program`.

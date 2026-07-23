@@ -10,6 +10,11 @@ enum TokenType : int
 	VAR,
     FN,
     RETURN,
+	TRUE,
+	FALSE,
+	FLOAT,
+	BOOL,
+	VOID,
 
 	PLUS,
 	MINUS,
@@ -23,6 +28,7 @@ enum TokenType : int
     R_BRACE,
 	NEW_LINE,
     COMMA,
+	COLON,
 
 	EOF
 }
@@ -41,37 +47,37 @@ struct Lexer
     Error error;
 }
 
-fn void Lexer.init(Lexer* this, String content)
+fn void Lexer.init(&self, String content)
 {
-	*this = { .source = content, .read_position = 0, .current_char = 0 };
+	*self = { .source = content, .read_position = 0, .current_char = 0 };
 }
 
-fn void Lexer.read_char(Lexer* this)
+fn void Lexer.read_char(&self)
 {
-	this.current_char = this.read_position >= this.source.len ? '\0' : this.source[this.read_position];
-	this.read_position++;
+	self.current_char = self.read_position >= self.source.len ? '\0' : self.source[self.read_position];
+	self.read_position++;
 }
 
-fn Token? Lexer.read_number(Lexer* this)
+fn Token? Lexer.read_number(&self)
 {
-	uint start    = this.read_position - 1;
+	uint start    = self.read_position - 1;
 	bool read_dot = false;
-	while (this.current_char.is_number() || this.current_char == '.')
+	while (self.current_char.is_number() || self.current_char == '.')
 	{
-		if (this.current_char == '.')
+		if (self.current_char == '.')
 		{
 			if (read_dot)
 			{
-                this.error = { .message = "Invalid number format" };
+                self.error = { .message = "Invalid number format" };
                 return LEXER_ERROR~;
 			}
 
 			read_dot = true;
 		}
-		this.read_char();
+		self.read_char();
 	}
 
-	return { .type = TokenType.NUMBER, .value = this.source[start..this.read_position - 2] };
+	return { .type = TokenType.NUMBER, .value = self.source[start..self.read_position - 2] };
 }
 
 fn Token lookup_keyword(String* value)
@@ -84,63 +90,73 @@ fn Token lookup_keyword(String* value)
 			return { .type = TokenType.FN, .value = "fn" };
 		case "return":
 			return { .type = TokenType.RETURN, .value = "return" };
+		case "true":
+			return { .type = TokenType.TRUE, .value = "true" };
+		case "false":
+			return { .type = TokenType.FALSE, .value = "false" };
+		case "float":
+			return { .type = TokenType.FLOAT, .value = "float" };
+		case "bool":
+			return { .type = TokenType.BOOL, .value = "bool" };
+		case "void":
+			return { .type = TokenType.VOID, .value = "void" };
 		default:
 			return { .type = TokenType.IDENTIFIER, .value = *value };
 	}
 }
 
-fn Token Lexer.read_identifier(Lexer* this) {
-	uint start    = this.read_position - 1;
-	while (this.current_char.is_valid_identifier_char())
+fn Token Lexer.read_identifier(&self) {
+	uint start    = self.read_position - 1;
+	while (self.current_char.is_valid_identifier_char())
 	{
-		this.read_char();
+		self.read_char();
 	}
 
-	String value = this.source[start..this.read_position - 2];
+	String value = self.source[start..self.read_position - 2];
 	return lookup_keyword(&value);
 }
 
-fn void Lexer.skip_whitespace(Lexer* this)
+fn void Lexer.skip_whitespace(&self)
 {
-	bool breakLoop = false;
-	while (!breakLoop)
+	bool break_loop = false;
+	while (!break_loop)
 	{
-		switch (this.current_char)
+		switch (self.current_char)
 		{
 			case ' ':
 			case '\t':
 			case '\r':
-				this.read_char();
+				self.read_char();
 				continue;
 			default:
-				breakLoop = true;
+				break_loop = true;
 		}
 	}
 }
 
-fn Token? Lexer.peek(Lexer* this)
+fn Token? Lexer.peek(&self)
 {
-    uint pos = this.read_position;
-    char c = this.current_char;
+    uint pos = self.read_position;
+    char c = self.current_char;
 
-    Token? next = this.next();
-    this.read_position = pos;
-    this.current_char = c;
+    Token? next = self.next();
+    self.read_position = pos;
+    self.current_char = c;
 
     return next;
 }
 
-fn Token? Lexer.next(Lexer* this)
+fn Token? Lexer.next(&self)
 {
 	Token token;
-	if (this.current_char == '\0' && this.read_position == 0)
+	if (self.current_char == '\0' && self.read_position == 0)
 	{
-		this.read_char();
+		self.read_char();
 	}
 
-	this.skip_whitespace();
+	self.skip_whitespace();
 
-	switch (this.current_char)
+	switch (self.current_char)
 	{
 		case '(':
 			token = { .type = TokenType.L_PAREN, .value = "(" };
@@ -172,6 +188,9 @@ fn Token? Lexer.next(Lexer* this)
 		case ',':
 			token = { .type = TokenType.COMMA, .value = "," };
 			break;
+		case ':':
+			token = { .type = TokenType.COLON, .value = ":" };
+			break;
 		case '\n':
 			token = { .type = TokenType.NEW_LINE, .value = "\n" };
 			break;
@@ -180,20 +199,20 @@ fn Token? Lexer.next(Lexer* this)
 			break;
 
 		default:
-			if (this.current_char.is_number())
+			if (self.current_char.is_number())
 			{
-				return this.read_number();
+				return self.read_number();
 			}
 
-			if (this.current_char.is_letter())
+			if (self.current_char.is_letter())
 			{
-				return this.read_identifier();
+				return self.read_identifier();
 			}
 
-            this.error = { .message = "Invalid token" };
+            self.error = { .message = "Invalid token" };
             return LEXER_ERROR~;
 	}
 
-	this.read_char();
+	self.read_char();
 	return token;
 }

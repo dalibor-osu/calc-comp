@@ -6,14 +6,20 @@ import std::collections::list;
 enum ExpressionKind : short
 {
 	NUMBER,
+	BOOL,
 	BINARY,
 	IDENTIFIER,
     CALL
 }
 
-struct NumberExpression
+struct FloatExpression
 {
-	float number;
+	float value;
+}
+
+struct BoolExpression
+{
+	bool value;
 }
 
 struct BinaryExpression
@@ -40,7 +46,8 @@ struct Expression
 	ExpressionKind kind;
 	union
 	{
-		NumberExpression num;
+		FloatExpression float_val;
+		BoolExpression bool_val;
 		BinaryExpression bin;
 		IdentifierExpression ident;
         CallExpression call;
@@ -61,14 +68,16 @@ enum StatementKind : short
 struct VarDeclarationStatement
 {
 	String name;
+	Type type;
 	Expression* rhs_expression;
 }
 
 struct FnDeclarationStatement
 {
 	String name;
-	List {String} parameters;
+	List {NameTypePair} parameters;
 	uint parameter_count;
+	Type return_type;
     List {Statement*} body;
 }
 

@@ -1,7 +1,7 @@
 module calc_comp;
 import std::math;
 
-// --- Parser: expressions, variables, errors ---
+// --- Parser: expressions, variables, annotations, errors ---
 // (Function parsing tests live in functions_test.c3)
 
 fn void parser_number_node() @test {
@@ -9,7 +9,21 @@ fn void parser_number_node() @test {
     Expression* exp = parse_source("5", &lexer);
     defer free_expression(exp);
     assert(exp.kind == ExpressionKind.NUMBER);
-    assert(math::abs(exp.num.number - 5.0) < 0.0001);
+    assert(math::abs(exp.float_val.value - 5.0) < 0.0001);
+}
+
+fn void parser_bool_literals() @test {
+    Lexer lexer;
+    Expression* exp = parse_source("true", &lexer);
+    defer free_expression(exp);
+    assert(exp.kind == ExpressionKind.BOOL);
+    assert(exp.bool_val.value == true);
+
+    Lexer lexer2;
+    Expression* exp2 = parse_source("false", &lexer2);
+    defer free_expression(exp2);
+    assert(exp2.kind == ExpressionKind.BOOL);
+    assert(exp2.bool_val.value == false);
 }
 
 fn void parser_binary_node() @test {
@@ -36,7 +50,7 @@ fn void parser_precedence_shape() @test {
 
 fn void parser_var_declaration() @test {
     Lexer lexer;
-    lexer.init("var x = 1 + 2");
+    lexer.init("var x: float = 1 + 2");
     Parser parser;
     parser.init(&lexer)!!;
     Program program = parser.parse_program()!!;
@@ -46,7 +60,22 @@ fn void parser_var_declaration() @test {
     Statement* statement = program[0];
     assert(statement.kind == StatementKind.VAR_DECLARATION);
     assert(statement.var_dec.name == "x");
+    assert(statement.var_dec.type == Type.FLOAT);
     assert(statement.var_dec.rhs_expression.kind == ExpressionKind.BINARY);
+}
+
+fn void parser_var_declaration_bool() @test {
+    Lexer lexer;
+    lexer.init("var b: bool = true");
+    Parser parser;
+    parser.init(&lexer)!!;
+    Program program = parser.parse_program()!!;
+    defer free_program(&program);
+
+    Statement* statement = program[0];
+    assert(statement.kind == StatementKind.VAR_DECLARATION);
+    assert(statement.var_dec.type == Type.BOOL);
+    assert(statement.var_dec.rhs_expression.kind == ExpressionKind.BOOL);
 }
 
 fn void parser_var_assignment() @test {
@@ -86,7 +115,7 @@ fn void parser_identifier_expression_is_not_assignment() @test {
 
 fn void parser_program_skips_blank_lines() @test {
     Lexer lexer;
-    lexer.init("var x = 1\n\n\nvar y = 2\nx + y\n");
+    lexer.init("var x: float = 1\n\n\nvar y: float = 2\nx + y\n");
     Parser parser;
     parser.init(&lexer)!!;
     Program program = parser.parse_program()!!;
@@ -99,12 +128,30 @@ fn void parser_program_skips_blank_lines() @test {
     assert(program[2].kind == StatementKind.EXPRESSION);
 }
 
+// --- Annotation errors ---
+
+fn void parser_error_var_missing_annotation() @test {
+    // Annotations are mandatory: var without ": <type>" must not parse
+    assert_parse_error("var x = 5", "variable identifier must be followed by type annotation (var <name>: <type> = <value>)");
+}
+
+fn void parser_error_var_void_type() @test {
+    // void is a return type only
+    assert_parse_error("var x: void = 1", "invalid variable type");
+}
+
+fn void parser_error_var_bad_type_name() @test {
+    assert_parse_error("var x: banana = 1", "invalid variable type");
+}
+
+// --- Other parse errors ---
+
 fn void parser_error_missing_paren() @test {
     assert_parse_error("(1 + 2", "Missing closing parentheses");
 }
 
 fn void parser_error_var_without_identifier() @test {
-    assert_parse_error("var 5 = 3", "var must be followed by an identifier");
+    assert_parse_error("var 5 = 3", "invalid token in variable name declaration");
 }
 
 fn void parser_error_in_right_operand() @test {
@@ -122,7 +169,7 @@ fn void parser_error_lexer_error_mid_expression() @test {
 fn void parser_error_var_missing_terminator() @test {
     // The already-parsed rhs must be freed when the statement
     // doesn't end at a newline/EOF
-    assert_parse_error("var x = 1 2", "variable declaration must end with a new line or eof");
+    assert_parse_error("var x: float = 1 2", "variable declaration must end with a new line or eof");
 }
 
 fn void parser_error_message_survives_peek() @test {
@@ -134,5 +181,5 @@ fn void parser_error_message_survives_peek() @test {
 fn void parser_error_frees_earlier_statements() @test {
     // Statements already parsed into the program must be freed
     // when a later statement fails
-    assert_parse_error("var x = 1\n(2 + 3", "Missing closing parentheses");
+    assert_parse_error("var x: float = 1\n(2 + 3", "Missing closing parentheses");
 }

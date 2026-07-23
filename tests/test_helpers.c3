@@ -12,10 +12,10 @@ fn Expression* parse_source(String source, Lexer* lexer) {
     return parser.parse_expression()!!;
 }
 
-// Evaluates a whole program and returns the value of the last expression
+// Evaluates a whole program and returns the Value of the last expression
 // statement (without printing it). Non-expression statements (var, fn,
 // assignment) are evaluated for their effects.
-fn float eval_source(String source) {
+fn Value eval_source(String source) {
     Lexer lexer;
     lexer.init(source);
     Parser parser;
@@ -27,7 +27,7 @@ fn float eval_source(String source) {
     env.init(mem);
     defer env.free();
 
-    float result = 0;
+    Value result;
     foreach (statement : program) {
         if (statement.kind == StatementKind.EXPRESSION) {
             result = eval_expression(statement.exp.expression, &env)!!;
@@ -39,8 +39,20 @@ fn float eval_source(String source) {
 }
 
 fn void assert_eval(String source, float expected) {
-    float result = eval_source(source);
-    assert(math::abs(result - expected) < 0.0001, "wrong result for expression");
+    Value result = eval_source(source);
+    assert(result.type == Type.FLOAT, "expected a float result");
+    assert(math::abs(result.float_val - expected) < 0.0001, "wrong result for expression");
+}
+
+fn void assert_eval_bool(String source, bool expected) {
+    Value result = eval_source(source);
+    assert(result.type == Type.BOOL, "expected a bool result");
+    assert(result.bool_val == expected, "wrong result for bool expression");
+}
+
+fn void assert_eval_void(String source) {
+    Value result = eval_source(source);
+    assert(result.type == Type.VOID, "expected a void result");
 }
 
 fn void assert_runtime_error(String source) {

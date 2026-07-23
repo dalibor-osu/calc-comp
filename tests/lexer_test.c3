@@ -4,7 +4,7 @@ module calc_comp;
 
 fn void lexer_single_char_tokens() @test {
     Lexer lexer;
-    lexer.init("( ) + - * / =");
+    lexer.init("( ) + - * / = :");
     assert(lexer.next()!!.type == TokenType.L_PAREN);
     assert(lexer.next()!!.type == TokenType.R_PAREN);
     assert(lexer.next()!!.type == TokenType.PLUS);
@@ -12,6 +12,7 @@ fn void lexer_single_char_tokens() @test {
     assert(lexer.next()!!.type == TokenType.STAR);
     assert(lexer.next()!!.type == TokenType.SLASH);
     assert(lexer.next()!!.type == TokenType.ASSIGN);
+    assert(lexer.next()!!.type == TokenType.COLON);
     assert(lexer.next()!!.type == TokenType.EOF);
 }
 
@@ -21,6 +22,27 @@ fn void lexer_braces_and_comma() @test {
     assert(lexer.next()!!.type == TokenType.L_BRACE);
     assert(lexer.next()!!.type == TokenType.R_BRACE);
     assert(lexer.next()!!.type == TokenType.COMMA);
+    assert(lexer.next()!!.type == TokenType.EOF);
+}
+
+fn void lexer_type_keywords() @test {
+    Lexer lexer;
+    lexer.init("true false float bool void");
+    assert(lexer.next()!!.type == TokenType.TRUE);
+    assert(lexer.next()!!.type == TokenType.FALSE);
+    assert(lexer.next()!!.type == TokenType.FLOAT);
+    assert(lexer.next()!!.type == TokenType.BOOL);
+    assert(lexer.next()!!.type == TokenType.VOID);
+    assert(lexer.next()!!.type == TokenType.EOF);
+}
+
+fn void lexer_type_keyword_prefix_is_identifier() @test {
+    // Words that merely start with a keyword must lex as identifiers
+    Lexer lexer;
+    lexer.init("truthy falsey floaty booly voided");
+    for (int i = 0; i < 5; i++) {
+        assert(lexer.next()!!.type == TokenType.IDENTIFIER);
+    }
     assert(lexer.next()!!.type == TokenType.EOF);
 }
 
@@ -76,11 +98,13 @@ fn void lexer_newline_is_a_token() @test {
 
 fn void lexer_var_declaration_tokens() @test {
     Lexer lexer;
-    lexer.init("var x = 5\nx + 1");
+    lexer.init("var x: float = 5\nx + 1");
     assert(lexer.next()!!.type == TokenType.VAR);
     Token ident = lexer.next()!!;
     assert(ident.type == TokenType.IDENTIFIER);
     assert(ident.value == "x");
+    assert(lexer.next()!!.type == TokenType.COLON);
+    assert(lexer.next()!!.type == TokenType.FLOAT);
     assert(lexer.next()!!.type == TokenType.ASSIGN);
     assert(lexer.next()!!.type == TokenType.NUMBER);
     assert(lexer.next()!!.type == TokenType.NEW_LINE);
@@ -91,9 +115,9 @@ fn void lexer_var_declaration_tokens() @test {
 }
 
 fn void lexer_fn_declaration_tokens() @test {
-    // Token stream of a full fn declaration
+    // Token stream of a fully annotated fn declaration
     Lexer lexer;
-    lexer.init("fn add(a, b) {\nreturn a + b\n}");
+    lexer.init("fn add(a: float, b: bool): void {\nreturn\n}");
     assert(lexer.next()!!.type == TokenType.FN);
     Token name = lexer.next()!!;
     assert(name.type == TokenType.IDENTIFIER);
@@ -102,17 +126,20 @@ fn void lexer_fn_declaration_tokens() @test {
     Token param_a = lexer.next()!!;
     assert(param_a.type == TokenType.IDENTIFIER);
     assert(param_a.value == "a");
+    assert(lexer.next()!!.type == TokenType.COLON);
+    assert(lexer.next()!!.type == TokenType.FLOAT);
     assert(lexer.next()!!.type == TokenType.COMMA);
     Token param_b = lexer.next()!!;
     assert(param_b.type == TokenType.IDENTIFIER);
     assert(param_b.value == "b");
+    assert(lexer.next()!!.type == TokenType.COLON);
+    assert(lexer.next()!!.type == TokenType.BOOL);
     assert(lexer.next()!!.type == TokenType.R_PAREN);
+    assert(lexer.next()!!.type == TokenType.COLON);
+    assert(lexer.next()!!.type == TokenType.VOID);
     assert(lexer.next()!!.type == TokenType.L_BRACE);
     assert(lexer.next()!!.type == TokenType.NEW_LINE);
     assert(lexer.next()!!.type == TokenType.RETURN);
-    assert(lexer.next()!!.type == TokenType.IDENTIFIER);
-    assert(lexer.next()!!.type == TokenType.PLUS);
-    assert(lexer.next()!!.type == TokenType.IDENTIFIER);
     assert(lexer.next()!!.type == TokenType.NEW_LINE);
     assert(lexer.next()!!.type == TokenType.R_BRACE);
     assert(lexer.next()!!.type == TokenType.EOF);
