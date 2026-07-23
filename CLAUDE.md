@@ -54,7 +54,8 @@ Everything lives in a single module: `module calc_comp;`.
   (+/-) → `parse_term` (*, /) → `parse_factor` (number, identifier,
   parens). `parse_statement` disambiguates assignment (`x = ...`) from an
   expression statement via `lexer.peek()`.
-- `src/eval.c3` — `alias Environment = HashMap{String, float}`,
+- `src/eval.c3` — `alias Environment = HashMap{String, float}` (rework to
+  a parent-linked scope struct is pending — see `TODO.md`),
   `eval_expression` / `eval_binary` / `eval_statement` / `eval_program`.
 - `src/util.c3` — `faultdef LEXER_ERROR, PARSER_ERROR, RUNTIME_ERROR`,
   `struct Error { String message; }`, char classifier methods,
@@ -62,14 +63,25 @@ Everything lives in a single module: `module calc_comp;`.
 - `src/main.c3` — `main` (file mode) and `run_repl` (one statement per
   line, `@pool()` + `io::treadline()` per iteration, prints parse errors,
   frees each line's statement, exits on `io::EOF`).
-- `tests/calc_test.c3` — lexer, parser-shape, parse-error, and end-to-end
-  eval tests. Helpers: `parse_source` (single expression), `eval_source`
-  (runs a whole program, returns the last expression statement's value
-  without printing), `assert_eval`, `assert_runtime_error`,
-  `assert_parse_error(source, expected_message, fault = PARSER_ERROR)`.
+- `tests/` — split by layer, all files in the same `calc_comp` module so
+  helpers are shared: `test_helpers.c3` (`parse_source` — single
+  expression; `eval_source` — runs a whole program, returns the last
+  expression statement's value without printing; `assert_eval`,
+  `assert_runtime_error`,
+  `assert_parse_error(source, expected_message, fault = PARSER_ERROR)`),
+  `lexer_test.c3`, `parser_test.c3` (expressions/variables/parse errors),
+  `eval_test.c3` (arithmetic + variables end-to-end), `functions_test.c3`
+  (fn parsing, calls, scoping, namespaces). Test names must be unique
+  across all files (one module).
 
 ## Language design decisions (agreed with the author)
 
+- **Long-term goal: compilation.** For now everything is interpreted and
+  name/arity/redeclaration checks happen at **runtime** (accepted
+  trade-off; REPL-friendly). A resolver (semantic pass) is a planned later
+  milestone — see the resolver section in `TODO.md`. Until then: do not
+  add features whose name resolution depends on runtime values; the REPL
+  will stay interpreted even once file mode compiles.
 - **Every value is a float.** No other types, no void.
 - **No semicolons.** A newline ends a statement.
 - `var x = <expression>` declares; **redeclaring is a runtime error**.
@@ -88,17 +100,37 @@ Everything lives in a single module: `module calc_comp;`.
 
   All parameters and return values are floats; no void functions. Resolved
   design decisions:
-  - **Isolated scope** — a body sees only its parameters and its own `var`
-    locals, never global variables (pass data in as parameters). Each call
-    runs in a fresh Environment. Subtlety: "no globals" means no global
-    *variables*; the **function table is still global**, so recursion and
-    mutual calls work.
-  - **Separate namespace, no overlap** — a function and a variable cannot
-    share a name; declarations check both the variable env and the function
-    table.
+  - **Lexical scoping via an environment chain** (revised — replaces the
+    earlier "isolated scope" decision). Bodies DO see global variables;
+    params and body locals **shadow** same-named globals. `Environment` is
+    being reworked from a bare HashMap alias into a scope struct holding
+    **both namespaces**: `{ variables map, functions map (values are
+    FnDeclarationStatement* — pointers, never by value), Environment*
+    parent }` (null parent ⇒ global; no separate global function table).
+    Chain rules: lookup (variables AND functions) walks up; `var`/`fn`
+    declare/check in the own scope only (that's what enables shadowing);
+    assignment walks up and writes where the name lives. Function lookup
+    returns the declaration + the env it was found in (= its definition
+    env), and a call runs in a fresh env **parented to that found-env** —
+    lexical, never the caller's env (dynamic scoping — wrong).
+    **Assignment to a global from inside a body is legal and mutates the
+    global** (plain chain-walking assign).
+  - **Local functions are supported** (revised — replaces "no nested
+    functions"). `fn` inside a body registers in the current scope and is
+    callable only while that scope is on the chain. Safe without closures
+    *only because functions are not values* (cannot be returned/stored);
+    if functions ever become first-class, closures must be designed for
+    real. `return` is still body-only: `parse_block` accepts `fn`,
+    top-level `parse_program` still rejects `return`.
+  - **One namespace per scope, uniform shadowing** — within a single
+    scope, a function and a variable cannot share a name (declarations
+    check both maps of their own scope). Across scopes, any inner
+    declaration may shadow any outer name of either kind — e.g. a local
+    `var f` legally shadows an outer `fn f`.
   - **Missing `return` is an error** — static detection preferred (would be
     the first semantic pass; easy while there's no control flow), runtime
-    detection is the fallback. See `TODO.md`.
+    detection is the fallback. A nested fn's `return` does NOT count for
+    the enclosing body. See `TODO.md`.
   - **No nested functions** — `fn` is top-level only, `return` is body-only.
     Enforced structurally by separate parser entry points: `parse_program`
     (accepts `fn`, not `return`) vs `parse_block` for bodies (accepts

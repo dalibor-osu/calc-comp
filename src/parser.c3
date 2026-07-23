@@ -78,7 +78,7 @@ fn void? Parser.expect_any(Parser* this, TokenType[] types, String message = "")
 
 fn void? Parser.expect_next_any(Parser* this, TokenType[] types, String message = "")
 {
-    Token next = this.peek();
+    Token next = this.peek()!;
 	if (array::contains(types, next.type))
 	{
 		return;
@@ -165,12 +165,13 @@ fn Statement? Parser.parse_statement_fn(Parser* this)
 	this.expect(L_PAREN, "function name must be followed by L_PAREN '('")!;
 
 	this.advance()!;
-    this.expect_any({ TokenType.R_PAREN, TokenType.IDENTIFIER }, "missing R_PAREN ')'");
+    this.expect_any({ TokenType.R_PAREN, TokenType.IDENTIFIER }, "missing R_PAREN ')'")!;
 
     List {String} args;
     args.init(mem);
     defer catch args.free();
 
+	uint parameterCount = 0;
     while (this.current.type != R_PAREN)
     {
         switch(this.current.type)
@@ -178,6 +179,7 @@ fn Statement? Parser.parse_statement_fn(Parser* this)
             case IDENTIFIER:
                 this.expect_next_any({ TokenType.COMMA, TokenType.R_PAREN}, "expected comma ',' or R_PAREN ')' after parameter name")!;
                 args.push(this.current.value);
+				parameterCount++;
                 break;
             case COMMA:
                 this.expect_next(IDENTIFIER, "missing parameter name after comma")!;
@@ -190,15 +192,25 @@ fn Statement? Parser.parse_statement_fn(Parser* this)
     }
 
     this.advance()!;
-    this.expect(L_BRACE, "start of a block expected");
-    List {Statement*} block = this.parse_block(true);
-    if (!block.last()!.kind != RETURN)
+	while(this.current.type == NEW_LINE) 
+	{
+		this.advance()!;
+	}
+
+    this.expect(L_BRACE, "start of a block expected")!;
+    List {Statement*} body = this.parse_block(true)!;
+	defer catch {
+		foreach (statement : body) free_statement(statement);
+		body.free();
+	}
+
+    if (body.len() == 0 || body.last()!.kind != StatementKind.RETURN)
     {
-        this.error = { .message = "Missing reurn statement" };
-        return PARSER_ERROR;
+        this.error = { .message = "Missing return statement" };
+        return PARSER_ERROR~;
     }
 
-    return { .kind = FN_DECLARATION, .fn_dec = { .name = name, .parameter_names = args, .body = block } };
+    return { .kind = FN_DECLARATION, .fn_dec = { .name = name, .parameters = args, .parameter_count = parameterCount, .body = body } };
 }
 
 fn List {Statement*}? Parser.parse_block(Parser* this, bool allowReturn)
@@ -221,7 +233,7 @@ fn List {Statement*}? Parser.parse_block(Parser* this, bool allowReturn)
         if (next.type == EOF)
         {
             this.error = { .message = "Block not ended" };
-            return PARSER_ERROR;
+            return PARSER_ERROR~;
         }
 
 		if (this.current.type == NEW_LINE)
@@ -238,7 +250,7 @@ fn List {Statement*}? Parser.parse_block(Parser* this, bool allowReturn)
     return block;
 }
 
-fn Statement*? Parser.parse_statement(Parser* this, bool allowReturn)
+fn Statement*? Parser.parse_statement(Parser* this, bool allowReturn = false)
 {
 	Statement* result = mem::new(Statement);
     defer catch free(result);
@@ -257,7 +269,7 @@ fn Statement*? Parser.parse_statement(Parser* this, bool allowReturn)
             if (!allowReturn)
             {
                 this.error = { .message = "Unexpected return statement encountered" };
-                return PARSER_ERROR;
+                return PARSER_ERROR~;
             }
             this.advance()!;
 			*result = { .kind = RETURN, .ret = { .expression = this.parse_expression()! } };
@@ -308,7 +320,6 @@ fn Expression*? Parser.parse_term(Parser* this)
 
 fn Expression? Parser.parse_factor_call(Parser* this)
 {
-    // TODO: Continue here: parse fn call
     String fnName = this.current.value;
     this.advance()!;
     this.advance()!;
@@ -320,15 +331,27 @@ fn Expression? Parser.parse_factor_call(Parser* this)
         parameters.free();
     }
 
+	uint parameterCount = 0;
     if (this.current.type == R_PAREN)
     {
-        return { .kind = CALL, .call = { .name = fnName, .args = parameters } };
+		this.advance()!;
+        return { .kind = CALL, .call = { .name = fnName, .parameters = parameters, .parameter_count = parameterCount } };
     }
 
     while (this.current.type != R_PAREN)
     {
-        
+        Expression* exp = this.parse_expression()!;
+		parameters.push(exp);
+		parameterCount++;
+		this.expect_any({ TokenType.COMMA, TokenType.R_PAREN }, "invalid fn call")!;
+		if (this.current.type == COMMA)
+		{
+			this.advance()!;
+		}
     }
+
+	this.advance()!;
+    return { .kind = CALL, .call = { .name = fnName, .parameters = parameters, .parameter_count = parameterCount } };
 }
 
 fn Expression*? Parser.parse_factor(Parser* this)
@@ -339,10 +362,9 @@ fn Expression*? Parser.parse_factor(Parser* this)
 			Expression* node = mem::new(Expression);
             defer catch free(node);
 
-            if (this.peek()!.kind == L_PAREN) // call
+            if (this.peek()!.type == L_PAREN) // call
             {
-                *node = this.parse_factor_call();
-			    this.advance()!;
+                *node = this.parse_factor_call()!;
                 return node;
             }
 

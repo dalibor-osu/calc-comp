@@ -42,12 +42,25 @@ fn char[]? read_file(String filename, char[] buffer)
 
 fn void free_expression(Expression* exp)
 {
-	if (exp.kind == ExpressionKind.BINARY)
+	switch(exp.kind) // No default branch on purpuse so the compiler forces handling when new kind is added
 	{
-		free_expression(exp.bin.left);
-		free_expression(exp.bin.right);
+		case BINARY:
+			free_expression(exp.bin.left);
+			free_expression(exp.bin.right);
+			free(exp);
+			break;
+		case CALL:
+			foreach(expression : exp.call.parameters) free_expression(expression);
+			exp.call.parameters.free();
+			free(exp);
+			break;
+		case NUMBER:
+			free(exp);
+			break;
+		case IDENTIFIER:
+			free(exp);
+			break;
 	}
-	free(exp);
 }
 
 fn void free_statement(Statement* statement)
@@ -57,11 +70,17 @@ fn void free_statement(Statement* statement)
         case VAR_DECLARATION:
             free_expression(statement.var_dec.rhs_expression);
             break;
+        case FN_DECLARATION:
+			foreach(st: statement.fn_dec.body) free_statement(st);
+			statement.fn_dec.parameters.free();
+			statement.fn_dec.body.free();
         case VAR_ASSIGN:
             free_expression(statement.var_assign.rhs_expression);
             break;
         case EXPRESSION:
             free_expression(statement.exp.expression);
+		case RETURN:
+            free_expression(statement.ret.expression);
             break;
     }
 

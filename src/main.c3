@@ -14,45 +14,46 @@ fn void run_repl() @noreturn
     while(true)
     {
         io::printf("|> ");
-        @pool()
+        String? line = io::readline(mem);
+        if (catch excuse = line)
         {
-            String? line = io::treadline();
-            if (catch excuse = line)
+            if (excuse == io::EOF)
             {
-                if (excuse == io::EOF)
-                {
-                    io::printn("\nExiting...");
-                    libc::exit(0);
-                }
-                io::printn("Failed to read line");
-                continue;
+                io::printn("\nExiting...");
+                libc::exit(0);
             }
+            io::printn("Failed to read line");
+            continue;
+        }
 
-        	Lexer lexer;
-	        lexer.init(line);
-	        Parser parser;
-	        if (catch excuse = parser.init(&lexer))
-            {
-                io::printn(parser.error.message);
-                continue;
-            }
+        Lexer lexer;
+        lexer.init(line);
+        Parser parser;
+        if (catch excuse = parser.init(&lexer))
+        {
+            io::printn(parser.error.message);
+            continue;
+        }
 
-            Statement*? statement = parser.parse_statement();
-            if (catch excuse = statement)
-            {
-                io::printn(parser.error.message);
-                continue;
-            }
+        Statement*? statement = parser.parse_statement();
+        if (catch excuse = statement)
+        {
+            io::printn(parser.error.message);
+            continue;
+        }
 
-            defer free_statement(statement);
+        if (catch excuse = eval_statement(statement, env))
+        {
+            free_statement(statement);
+            continue;
+        }
 
-            if (catch excuse = eval_statement(statement, env))
-            {
-                // TODO: Verify this
-                continue;
-            }
-        };
-    }
+        if (statement.kind != StatementKind.FN_DECLARATION)
+        {
+            free_statement(statement);
+            alloc::free(mem, line);
+        }
+    };
 }
 
 fn int main(String[] args)

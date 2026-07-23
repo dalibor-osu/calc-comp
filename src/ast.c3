@@ -31,7 +31,8 @@ struct IdentifierExpression
 struct CallExpression
 {
 	String name;
-    List {Expression*} args;
+    List {Expression*} parameters;
+	uint parameter_count;
 }
 
 struct Expression
@@ -66,8 +67,9 @@ struct VarDeclarationStatement
 struct FnDeclarationStatement
 {
 	String name;
-	List {String} parameter_names;
-    List {Statement} body;
+	List {String} parameters;
+	uint parameter_count;
+    List {Statement*} body;
 }
 
 struct VarAssignStatement
